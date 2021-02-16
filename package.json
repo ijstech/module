@@ -1,10 +1,12 @@
 {
     "name": "@ijstech/module",
-    "version": "0.0.1",
+    "version": "0.1.2",
     "description": "Module plugin",
     "author": "https://ijs.network",    
     "license": "MIT",
-    "dependencies": {},
+    "dependencies": {
+        "@ijstech/log": "^0.1.0"
+    },
     "repository": {
         "type": "git",
         "url": "https://github.com/ijstech/module"

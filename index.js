@@ -289,18 +289,21 @@ function getLocalPackagePath(name){
 }
 var Cache = {};
 module.exports = {
-    _init: function(options){
+    _init: function(options){   
         Options = options;
         this.options = options        
     },
+    getLocalPackagePath: getLocalPackagePath,
     getPackage: async function(name, pack){
         try{
             if (pack.liveUpdate){
                 let data = await getModuleCode(this.options.updateServer, pack.id);
                 return JSON.parse(data);
             }
-            else{
-                return require(name);
+            else{        
+                
+                let path = getLocalPackagePath(name);
+                return require.main.require(name);             
             }
         }
         catch(err){
@@ -308,8 +311,19 @@ module.exports = {
         }
     },
     getModuleScript: async function(package, module){        
-        try{            
-            if (package.liveUpdate){
+        try{     
+            if (!package){
+                if (Cache[module.file])
+                    return Cache[module.id];
+                let localPath = getFullPath(RootPath, module.file);
+                let localScript = await readLocalFile(localPath);
+                Cache[module.file] = {
+                    require: [],
+                    script: localScript
+                };
+                return Cache[module.file]
+            }     
+            else if (package.liveUpdate){
                 if (package.cache && Cache[module.id])
                     return Cache[module.id];
                 let data = await getRemoteModuleScript(this.options.updateServer, module.id)

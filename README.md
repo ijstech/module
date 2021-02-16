@@ -1,2 +1,2 @@
 # @ijstech/module
-Module plugin for [Secure Application Server](https://github.com/ijstech/app-server)
+Module plugin for [IJS Secure Node Server](https://github.com/ijstech/node)
