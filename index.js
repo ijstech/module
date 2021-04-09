@@ -21,7 +21,7 @@ function getFullPath(root, ...paths){
     else
         return;
 };
-async function getRemoteModuleScript(config, moduleId){
+async function getRemoteModuleScript(config, moduleId){    
     try{
         var result = await Request.post(config.host, {
             path: moduleId,
@@ -32,6 +32,9 @@ async function getRemoteModuleScript(config, moduleId){
         if (typeof(result) == 'string')
             result = JSON.parse(result);        
         return {
+            form: result.form,
+            moduleName: result.moduleName,
+            className: result.className,
             require: result.requiredModules,
             script: getScript(result)
         };
@@ -133,7 +136,7 @@ function _plugin_(vm, ctx, site, config){
                 try{
                     let modules = site.modules;                    
                     for (var v in modules){
-                        var pack = moduels[v];
+                        var pack = modules[v];
                         if (pack.id == id || pack.id.indexOf('/' + id)){
                             if (pack.id.indexOf('/') > 0)                        
                                 var id = pack.id.split('/')[1];
@@ -260,11 +263,15 @@ async function getPackage(name, pack){
     try{
         if (pack && pack.liveUpdate){
             let data = await getModuleCode(pack);
-            return JSON.parse(data);
+            data = JSON.parse(data);
+            data.modules = data.modules || {};
+            for (let v in data.modules)
+                data.modules[v.toLowerCase()] = data.modules[v];
+            return data;
         }
-        else{        
+        else{
             let path = getLocalPackagePath(name);
-            return require.main.require(name);             
+            return require.main.require(name);
         }
     }
     catch(err){
@@ -280,7 +287,7 @@ function getScript(module){
     result += module.es6 || module.script || '';
     return result;
 };
-async function getModuleScript(package, module){        
+async function getModuleScript(package, module){
     try{     
         if (!package){
             if (Cache[module.file])
@@ -303,14 +310,18 @@ async function getModuleScript(package, module){
                     let pack = await getPackage(package.name, package);
                     moduleData.reference = await getRequiredModules(package, pack.modules, moduleData.requiredModules);     
                 };
-                let script = getScript(moduleData);
+                let script = getScript(moduleData);                
                 data = {
+                    form: moduleData.form,
+                    moduleName: moduleData.moduleName,
+                    className: moduleData.className,
                     require: moduleData.requiredModules,
                     script: script
                 };
             }       
             else
                 data = await getRemoteModuleScript(Options.updateServer, module.id);
+
             if (package.cache)
                 Cache[package.id + '/' + module.id] = data;
             return data;
@@ -424,7 +435,7 @@ async function getScriptByPath(package, path){
         let module;
         for (var v in pack.modules){
             if (v.toLowerCase() == path){
-                module = pack.modules[v];
+                module = pack.modules[v.toLowerCase()];
                 break;
             };
         };
@@ -485,12 +496,38 @@ function _plugin(vm, ctx, site, config) {
         }		
 	} + ';init()')
 };
+function getLocalPackage(name){
+    let package;
+    let path;
+    try{
+        package = require(name);
+        path = Path.dirname(require.resolve(name + '/package.json'));
+    }
+    catch(err){
+        try{
+            package = require(RootPath + '/node_modules/' + name);
+            path = Path.dirname(require.resolve(RootPath + '/node_modules/' + name + '/package.json'));
+        }
+        catch(err){
+            return Log.error('$package_not_found', {
+                name: name
+            });
+        };
+    };
+    return {
+        rootPath: path,
+        default: package,
+        plugin: package._plugin,
+        middleware: package._middleware
+    };
+};
 module.exports = {
     _init: function(options){   
         Options = options;
         this.options = options        
     },
     _plugin: _plugin,
+    getLocalPackage: getLocalPackage,
     getLocalPackagePath: getLocalPackagePath,
     getPackage: getPackage,
     getModuleScript: getModuleScript,
