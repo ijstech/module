@@ -21,6 +21,30 @@ function getFullPath(root, ...paths){
     else
         return;
 };
+function resolveFullPath(...paths){    
+    let p = paths[0];    
+    for (let i = 1; i < paths.length; i ++){
+        if (Array.isArray(paths[i])){
+            let result = [];
+            for (let k = 0; k < paths[i].length; k ++){
+                result.push(Path.join(p, paths[i][k]))
+            }
+            for (let k = 0; k < result.length; k++){
+                if (result[k].indexOf(p) != 0)
+                    return
+            }
+            return result;
+        }
+        else{
+            let result = Path.join(p, paths[i]);
+            if (result.indexOf(p) == 0)
+                p = result
+            else
+                return
+        }
+    }
+    return p;
+}
 async function getRemoteModuleScript(config, moduleId){    
     try{
         var result = await Request.post(config.host, {
@@ -44,7 +68,7 @@ async function getRemoteModuleScript(config, moduleId){
         return;
     };
 };
-async function getModuleCode(module){    
+async function getModuleCode(module){        
     try{        
         if (Options.localPath && module.orgId){
             let path
@@ -59,8 +83,13 @@ async function getModuleCode(module){
             else
                 path = getFullPath(RootPath, Options.localPath, module.id);                        
             let file = await readLocalFile(path);
-            let code = JSON.parse(file).code;                     
-            return code;
+            if (file){                
+                let code = JSON.parse(file).code;                     
+                return code;
+            }            
+        }
+        if (Options.storage){
+
         }
         else if (Options.updateServer){
             let result = await Request.post(Options.updateServer.host, {
@@ -168,7 +197,7 @@ function _plugin_(vm, ctx, site, config){
         getModule: async function(pacakgeId, moduleId){
             return new Promise(async function(resolve, reject){
                 try{
-                    let fullPath = getFullPath(localPath, pacakgeId, moduleId);
+                    let fullPath = getFullPath(localPath, pacakgeId, moduleId);                    
                     let data = await readLocalFile(fullPath);
                     resolve(data);
                 }
@@ -182,7 +211,7 @@ function _plugin_(vm, ctx, site, config){
         getPackage: async function(pacakgeId, moduleId){
             return new Promise(async function(resolve, reject){
                 try{
-                    let fullPath = getFullPath(localPath, pacakgeId, moduleId);
+                    let fullPath = getFullPath(localPath, pacakgeId, moduleId);                    
                     let data = await readLocalFile(fullPath);                    
                     resolve(JSON.parse(data).code);
                 }
@@ -261,7 +290,7 @@ function getLocalPackagePath(name){
 var Cache = {};
 async function getPackage(name, pack){
     try{
-        if (pack && pack.liveUpdate){
+        if (pack && pack.liveUpdate){            
             let data = await getModuleCode(pack);
             data = JSON.parse(data);
             data.modules = data.modules || {};
@@ -278,13 +307,26 @@ async function getPackage(name, pack){
         Log.error(err);
     };
 };
-function getScript(module){    
-    let result = '';    
+function getScript(module){
+    if (!module.es6 && !module.script) 
+        return '';
+    let result = '';       
     if (module.reference){
-        for (let i = 0; i < module.reference.length; i ++)
-            result += getScript(module.reference[i]);
+        for (let i = 0; i < module.reference.length; i ++){
+            let ref = module.reference[i];
+            result += getScript(ref);
+        }
     };
     result += module.es6 || module.script || '';
+    if (module.path && module.path.slice(-3) == '.ts'){
+        let path = module.path.toLowerCase();        
+        path = path.substring(0, path.length -3);
+        result += 
+`if (module && module.exports){
+    module.paths['${path}'] = module.exports;
+    module.exports = null;    
+}`
+    };
     return result;
 };
 async function getModuleScript(package, module){
@@ -300,12 +342,12 @@ async function getModuleScript(package, module){
             };
             return Cache[module.file];
         }     
-        else if (package.liveUpdate){
+        else if (package.liveUpdate){            
             if (package.cache && Cache[package.id + '/' + module.id])
                 return Cache[package.id + '/' + module.id];  
             let data;
             if (Options.localPath && package.orgId){
-                let moduleData = await getModule(package, module);
+                let moduleData = await getModule(package.orgId, module);
                 if (moduleData.requiredModules && moduleData.requiredModules.length > 0){
                     let pack = await getPackage(package.name, package);
                     moduleData.reference = await getRequiredModules(package, pack.modules, moduleData.requiredModules);     
@@ -320,23 +362,32 @@ async function getModuleScript(package, module){
                 };
             }       
             else
-                data = await getRemoteModuleScript(Options.updateServer, module.id);
-
+                data = await getRemoteModuleScript(Options.updateServer, module.id);            
             if (package.cache)
                 Cache[package.id + '/' + module.id] = data;
             return data;
         }
-        else{          
+        else{
             if (Cache[package.id + '/' + module.id])
                 return Cache[package.id + '/' + module.id];
             let packPath = getLocalPackagePath(package.name);               
             let script = '';  
-            for (let i = 0; i < module.scriptPath.length; i ++){
-                let name = module.scriptPath[i];                    
+            for (let i = module.scriptPath.length -1; i > -1; i--){
+                let name = module.scriptPath[i];
                 if (name.substr(name.length - 4) == '.pdm' && module.require.indexOf('@ijstech/pdm') < 0)
                     module.require.push('@ijstech/pdm');
-                let path = getFullPath(packPath, name);
+                let path = getFullPath(packPath, name);                
                 script += (await readLocalFile(path));
+                if (name.slice(-3) == '.js'){                    
+                    path = name.substring(0, name.length -3);
+                    if (path.substring(0,2) == './')
+                        path = path.substring(1);
+                    script += 
+                        `if (module && module.exports){
+                            module.paths['${path}'] = module.exports;
+                            module.exports = null;    
+                        }`
+                }
             };
             let result = {
                 require: module.require,
@@ -396,7 +447,7 @@ async function getRequiredModules(package, modules, requiredModules, result, idx
     }
     return result;
 };
-async function getModule(package, module){
+async function getModule(orgId, module){
     try{
         let id;        
         if (module.id.indexOf('/') > 0){
@@ -405,13 +456,13 @@ async function getModule(package, module){
         else{
             id = module.id;
         };
-        return getModuleById(package.orgId, id);
+        return getModuleById(orgId, id);
     }
     catch(err){
         Log.error(err);
     };
 };
-async function getModuleById(orgId, moduleId){
+async function getModuleById(orgId, moduleId){    
     try{
         let fullPath;
         if (orgId){
@@ -428,9 +479,9 @@ async function getModuleById(orgId, moduleId){
         Log.error(err);
     };
 };
-async function getScriptByPath(package, path){
+async function getScriptByPath(site, package, path){
     try{
-        path = path.toLowerCase();
+        path = path.toLowerCase();        
         let pack = await getPackage(package.name, package);
         let module;
         for (var v in pack.modules){
@@ -439,9 +490,14 @@ async function getScriptByPath(package, path){
                 break;
             };
         };
-        let data;
+        let data;        
         if (module)
-            data = await getModule(package, module);
+            data = await getModule(package.orgId, module);
+        else{
+            module = site.modules[path];
+            if (module)
+                data = await getModule(module.orgId, module);
+        };
         if (data){
             let reference = await getRequiredModules(package.orgId, pack.modules, data.requiredModules);        
             return {
@@ -464,7 +520,7 @@ function _plugin(vm, ctx, site, config) {
 	vm.injectGlobalObject('_$$plugin_module', {
         $$getScriptByPath: true,
         getScriptByPath: async function(path){
-            let script = await getScriptByPath(ctx.package, path);        
+            let script = await getScriptByPath(site, ctx.package, path);        
             return JSON.stringify(script);
         },
         $$getPackage: true,
@@ -482,16 +538,25 @@ function _plugin(vm, ctx, site, config) {
 	}, '' + function init() {
 		global.Plugins.Module = {
             getScriptByPath: async function(path){
-                let result = _$$plugin_module.getScriptByPath(path);
-                return JSON.parse(result);
+                try{
+                    let result = _$$plugin_module.getScriptByPath(path);
+                    return JSON.parse(result);
+                }
+                catch(err){}                                
             },
             getPackage: async function(orgId, packId){
-                let result = await _$$plugin_module.getPackage(orgId, packId);
-                return JSON.parse(result);
+                try{
+                    let result = await _$$plugin_module.getPackage(orgId, packId);
+                    return JSON.parse(result);
+                }
+                catch(err){}
             },
             getModule: async function(orgId, packId, moduleId){
-                let result = await _$$plugin_module.getModule(orgId, packId, moduleId);
-                return JSON.parse(result);
+                try{
+                    let result = await _$$plugin_module.getModule(orgId, packId, moduleId);
+                    return JSON.parse(result);
+                }
+                catch(err){}                
             }
         }		
 	} + ';init()')
@@ -531,5 +596,6 @@ module.exports = {
     getLocalPackagePath: getLocalPackagePath,
     getPackage: getPackage,
     getModuleScript: getModuleScript,
-    getModuleCode: getModuleCode
+    getModuleCode: getModuleCode,
+    resolveFullPath: resolveFullPath
 }
