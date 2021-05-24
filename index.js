@@ -291,7 +291,7 @@ var Cache = {};
 async function getPackage(name, pack){
     try{
         if (pack && pack.liveUpdate){            
-            let data = await getModuleCode(pack);
+            let data = await getModuleCode(pack);            
             data = JSON.parse(data);
             data.modules = data.modules || {};
             for (let v in data.modules)
@@ -311,8 +311,8 @@ function getScript(module){
     if (!module.es6 && !module.script) 
         return '';
     let result = '';       
-    if (module.reference){
-        for (let i = 0; i < module.reference.length; i ++){
+    if (module.reference){        
+        for (let i = module.reference.length -1; i > -1; i --){
             let ref = module.reference[i];
             result += getScript(ref);
         }
