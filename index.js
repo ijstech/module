@@ -19,7 +19,7 @@ function getFullPath(root, ...paths){
         return result;
     }    
     else
-        return;
+        return '';
 };
 function resolveFullPath(...paths){    
     let p = paths[0];    
@@ -310,6 +310,7 @@ async function getPackage(name, pack){
 function getScript(module){
     if (!module.es6 && !module.script) 
         return '';
+
     let result = '';       
     if (module.reference){        
         for (let i = module.reference.length -1; i > -1; i --){
@@ -317,13 +318,16 @@ function getScript(module){
             result += getScript(ref);
         }
     };
+    if (module.path)
+        result += `$CURR_PATH = "${module.path}";`
+
     result += module.es6 || module.script || '';
     if (module.path && module.path.slice(-3) == '.ts'){
-        let path = module.path.toLowerCase();        
+        let path = module.path;        
         path = path.substring(0, path.length -3);
         result += 
 `if (module && module.exports){
-    module.paths['${path}'] = module.exports;
+    module.paths['${path.toLowerCase()}'] = module.exports;
     module.exports = null;    
 }`
     };
@@ -373,22 +377,30 @@ async function getModuleScript(package, module){
             let packPath = getLocalPackagePath(package.name);               
             let script = '';  
             for (let i = module.scriptPath.length -1; i > -1; i--){
-                let name = module.scriptPath[i];
-                if (name.substr(name.length - 4) == '.pdm' && module.require.indexOf('@ijstech/pdm') < 0)
+                let name = module.scriptPath[i];                   
+                if (name.endsWith('.pdm') && module.require.indexOf('@ijstech/pdm') < 0)
                     module.require.push('@ijstech/pdm');
-                let path = getFullPath(packPath, name);                
+                let path = getFullPath(packPath, name);
+                if (name.startsWith('./'))
+                    script += `$CURR_PATH = "${name.substring(1)}";`
+                else
+                    script += `$CURR_PATH = "${name}";`
+                if (i > 0)
+                    script += `(function () {`           
                 script += (await readLocalFile(path));
-                if (name.slice(-3) == '.js'){                    
+                if (i > 0)
+                    script += `})();`           
+                if (name.endsWith('.js')){                             
                     path = name.substring(0, name.length -3);
-                    if (path.substring(0,2) == './')
+                    if (path.startsWith('./'))
                         path = path.substring(1);
                     script += 
                         `if (module && module.exports){
-                            module.paths['${path}'] = module.exports;
+                            module.paths['${path.toLowerCase()}'] = module.exports;
                             module.exports = null;    
                         }`
                 }
-            };
+            };            
             let result = {
                 require: module.require,
                 script: script
