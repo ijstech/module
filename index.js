@@ -45,16 +45,17 @@ function resolveFullPath(...paths){
     }
     return p;
 }
-async function getRemoteModuleScript(config, moduleId){    
+async function getRemoteModuleScript(config, moduleId){
     try{
         var result = await Request.post(config.host, {
             path: moduleId,
-            token: config.token,        
+            token: config.token,    
+            working: true,    
             script: true,
             code: true
-        });        
+        });                
         if (typeof(result) == 'string')
-            result = JSON.parse(result);        
+            result = JSON.parse(result);
         return {
             form: result.form,
             moduleName: result.moduleName,
